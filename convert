@@ -1,0 +1,84 @@
+# convert.py
+import argparse
+import os
+import sys
+from pathlib import Path
+from PIL import Image
+
+def convert_png_to_jpg(input_path, output_path, quality=85, resize=None):
+    """Конвертирует PNG в JPG с заданным качеством и изменением размера."""
+    try:
+        img = Image.open(input_path)
+        # Конвертация в RGB (JPG не поддерживает альфа-канал)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGB')
+        # Изменение размера
+        if resize:
+            width, height = resize
+            img.thumbnail((width, height), Image.Resampling.LANCZOS)
+        # Сохранение
+        img.save(output_path, 'JPEG', quality=quality, optimize=True)
+        return True
+    except Exception as e:
+        print(f"Ошибка при обработке {input_path}: {e}", file=sys.stderr)
+        return False
+
+def process_files(inputs, quality=85, resize=None, output_dir='.', overwrite=False, recursive=False):
+    """Обрабатывает список файлов или директорий."""
+    files = []
+    for item in inputs:
+        path = Path(item)
+        if path.is_file() and path.suffix.lower() == '.png':
+            files.append(path)
+        elif path.is_dir():
+            if recursive:
+                for p in path.rglob('*.png'):
+                    files.append(p)
+            else:
+                for p in path.glob('*.png'):
+                    files.append(p)
+        elif '*' in item:
+            import glob
+            for p in glob.glob(item):
+                if p.lower().endswith('.png'):
+                    files.append(Path(p))
+    if not files:
+        print("Не найдено PNG-файлов.")
+        return
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    total = len(files)
+    print(f"Найдено {total} PNG-файлов.")
+    for i, input_file in enumerate(files, 1):
+        out_name = input_file.stem + '.jpg'
+        out_file = output_path / out_name
+        if out_file.exists() and not overwrite:
+            print(f"[{i}/{total}] {out_file} уже существует, пропуск.")
+            continue
+        print(f"[{i}/{total}] Конвертация {input_file} -> {out_file}")
+        success = convert_png_to_jpg(input_file, out_file, quality, resize)
+        if not success:
+            print(f"  Ошибка при конвертации {input_file}")
+    print("Готово!")
+
+def parse_resize(s):
+    """Парсит строку вида '800x600'."""
+    parts = s.split('x')
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError("Формат: ШИРИНАxВЫСОТА")
+    return int(parts[0]), int(parts[1])
+
+def main():
+    parser = argparse.ArgumentParser(description='Конвертер PNG → JPG')
+    parser.add_argument('inputs', nargs='+', help='PNG-файлы, папки или маски')
+    parser.add_argument('--quality', type=int, default=85, help='Качество JPG (1-100)')
+    parser.add_argument('--resize', type=parse_resize, help='Изменение размера (ШxВ)')
+    parser.add_argument('--output', '-o', default='.', help='Папка для сохранения JPG')
+    parser.add_argument('--overwrite', action='store_true', help='Перезаписывать существующие файлы')
+    parser.add_argument('--recursive', action='store_true', help='Рекурсивный обход папок')
+    args = parser.parse_args()
+
+    process_files(args.inputs, args.quality, args.resize, args.output, args.overwrite, args.recursive)
+
+if __name__ == '__main__':
+    main()
